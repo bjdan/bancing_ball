@@ -36,7 +36,7 @@ COLOR_CHOICES = [
 ]
 
 # 球的数量、半径范围、速度范围（像素/帧）
-BALL_MIN, BALL_MAX = 3, 6
+BALL_MIN, BALL_MAX = 10, 20
 R_MIN, R_MAX = 12, 26
 SPEED_MIN, SPEED_MAX = 2.0, 5.0
 
@@ -46,8 +46,12 @@ PLAYER_SPEED = 5.0            # 每帧移动像素（键盘控制）
 PLAYER_COLOR = (0, 200, 200)  # 青色，易与球区分
 PLAYER_HP_MAX = 100
 DAMAGE_PER_HIT = 20
-HURT_COOLDOWN_FRAMES = 30     # 被击中后短暂无敌（约 0.5s@60FPS）
+HURT_COOLDOWN_FRAMES = 120     # 被击中后短暂无敌（约 0.5s@60FPS）
 
+
+# 无敌期表现：颜色与速度提升
+PLAYER_INVINCIBLE_COLOR = (255, 235, 59)  # 明亮黄，易识别
+INVINCIBLE_SPEED_MULT = 1.6               # 无敌期移动速度加成倍数
 
 # ============ 工具函数（简单明了） ============
 def clamp(x, a, b):
@@ -194,8 +198,9 @@ def update_player(player):
     else:
         norm = 1
 
-    player["x"] += (player["speed"] * dx) / norm
-    player["y"] += (player["speed"] * dy) / norm
+    effective_speed = player["speed"] * (INVINCIBLE_SPEED_MULT if player["hurt_cd"] > 0 else 1.0)
+    player["x"] += (effective_speed * dx) / norm
+    player["y"] += (effective_speed * dy) / norm
 
     half_w = player["w"] / 2
     half_h = player["h"] / 2
@@ -255,7 +260,8 @@ def draw_player(screen, player):
     half_w = player["w"] / 2
     half_h = player["h"] / 2
     rect = pygame.Rect(int(player["x"] - half_w), int(player["y"] - half_h), int(player["w"]), int(player["h"]))
-    pygame.draw.rect(screen, player["color"], rect)
+    color = PLAYER_INVINCIBLE_COLOR if player["hurt_cd"] > 0 else player["color"]
+    pygame.draw.rect(screen, color, rect)
 
 
 def draw_ui(screen, font, player, game_over):
@@ -333,4 +339,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
