@@ -164,7 +164,7 @@ def make_player():
         "color": PLAYER_COLOR,
         "hp": PLAYER_HP_MAX,
         "hp_max": PLAYER_HP_MAX,
-        "hurt_cd": 0,  # 短暂无敌计时器（帧）
+        "hurt_cd": HURT_COOLDOWN_FRAMES,  # 短暂无敌计时器（帧）
     }
 
 
