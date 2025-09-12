@@ -91,11 +91,7 @@ def handle_events():
     """
     处理窗口事件：关闭窗口或按 ESC 键返回 True。
     """
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            return True
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            return True
+    # Deprecated: event handling is done in main loop
     return False
 
 
@@ -268,6 +264,62 @@ def draw_hud(screen, font, player, state, score, high_score):
         screen.blit(tip2, (cfg.WIDTH - tip2.get_width() - 16, cfg.HEIGHT - tip2.get_height() - 12))
 
 
+def draw_hud(screen, font, big_font, small_font, player, state, score, high_score):
+    """
+    HUD: left-top HP and bar, right-top score/high,
+    center status messages using provided cached fonts.
+    """
+    # HP text (left-top)
+    if player is not None:
+        text = f"HP: {player['hp']}/{player['hp_max']}"
+    else:
+        text = "HP: -/-"
+    text_surf = font.render(text, True, cfg.WHITE)
+    screen.blit(text_surf, (16, 12))
+
+    # HP bar
+    if player is not None:
+        bar_x, bar_y = 16, 40
+        bar_w, bar_h = 220, 16
+        pygame.draw.rect(screen, cfg.RED, (bar_x, bar_y, bar_w, bar_h))
+        if player["hp_max"] > 0 and player["hp"] > 0:
+            ratio = player["hp"] / player["hp_max"]
+            pygame.draw.rect(screen, cfg.GREEN, (bar_x, bar_y, int(bar_w * ratio), bar_h))
+        pygame.draw.rect(screen, cfg.WHITE, (bar_x, bar_y, bar_w, bar_h), 2)
+
+    # Score/High (right-top)
+    score_text = f"Score: {int(score)}"
+    hs_text = f"High: {high_score}"
+    score_surf = font.render(score_text, True, cfg.WHITE)
+    hs_surf = font.render(hs_text, True, cfg.WHITE)
+    screen.blit(score_surf, (cfg.WIDTH - score_surf.get_width() - 16, 12))
+    screen.blit(hs_surf, (cfg.WIDTH - hs_surf.get_width() - 16, 36))
+
+    # Center status message
+    center = (cfg.WIDTH // 2, cfg.HEIGHT // 2)
+    if state == "ready":
+        msg, tip = "READY", "Press SPACE / ENTER to start"
+    elif state == "paused":
+        msg, tip = "PAUSED", "Press P to resume"
+    elif state == "gameover":
+        msg, tip = "GAME OVER", "Press SPACE / ENTER to restart"
+    else:
+        msg, tip = None, None
+
+    if msg:
+        msg_surf = big_font.render(msg, True, cfg.WHITE)
+        rect = msg_surf.get_rect(center=center)
+        screen.blit(msg_surf, rect)
+        if tip:
+            tip_surf = small_font.render(tip, True, cfg.WHITE)
+            tip_rect = tip_surf.get_rect(center=(center[0], center[1] + 48))
+            screen.blit(tip_surf, tip_rect)
+
+    if state == "playing":
+        tip2 = small_font.render("P: Pause", True, cfg.WHITE)
+        screen.blit(tip2, (cfg.WIDTH - tip2.get_width() - 16, cfg.HEIGHT - tip2.get_height() - 12))
+
+
 def main():
     # 初始化 pygame 与窗口
     pygame.init()
@@ -275,6 +327,8 @@ def main():
     screen = pygame.display.set_mode((cfg.WIDTH, cfg.HEIGHT))
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 24)
+    big_font = pygame.font.SysFont(None, 56)
+    small_font = pygame.font.SysFont(None, 28)
 
     def start_new_game():
         ball_count = random.randint(cfg.BALL_MIN, cfg.BALL_MAX)
@@ -333,7 +387,7 @@ def main():
             draw_balls(screen, balls)
             if player is not None:
                 draw_player(screen, player)
-        draw_hud(screen, font, player, state, score, high_score)
+        draw_hud(screen, font, big_font, small_font, player, state, score, high_score)
 
         # 4) 显示
         pygame.display.flip()
