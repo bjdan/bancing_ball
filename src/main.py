@@ -1,105 +1,220 @@
 """
-躲避球（M3）。仅保留最新需求：
-- 玩家方块可移动、与弹球碰撞扣血并短暂无敌；
-- 左上角显示 HP 条；右上角显示分数与最高分；
-- 支持 Ready/Playing/Paused/GameOver 状态切换；
+躲避球（M3）。
+
+对象关系（字典模拟对象，函数扮演方法）：
+    game ──拥有──> hud
+      │              └─读取 game.state / score / player
+      ├─拥有──> player ──检测──> balls[*]
+      └─拥有──> balls[*]
+
+状态切换：
+    READY --Space/Enter--> PLAYING --P--> PAUSED
+      ^                        | ^          |
+      |                        | |          |
+      +----Space/Enter---------+ +----P-----+
+                               |
+                             HP<=0
+                               v
+                            GAMEOVER
+                               ^
+                               +--Space/Enter
+
 运行：python src/main.py
 """
 
 import math
 import random
+from typing import Any
+
 import pygame
+
 import config as cfg
 
 
-# ============ 工具函数 ============
-def clamp(x: float, a: float, b: float) -> float:
-    """将 x 限制在区间 [a, b] 内。"""
-    if x < a:
-        return a
-    if x > b:
-        return b
-    return x
+Ball = dict[str, Any]
+Balls = list[Ball]
+Player = dict[str, Any]
+HUD = dict[str, Any]
+Game = dict[str, Any]
 
 
-def make_ball():
-    """
-    生成一个随机弹球：
-    - 随机半径 r；
-    - 随机位置 (x, y)，保证完全在屏幕内；
-    - 随机方向与速度；
-    - 随机颜色。
-    返回：dict{x, y, vx, vy, r, color}
-    """
-    r = random.randint(cfg.R_MIN, cfg.R_MAX)
-    x = random.uniform(r, cfg.WIDTH - r)
-    y = random.uniform(r, cfg.HEIGHT - r)
+# ============ 球体相关 ============
+def clamp(value: float, lower: float, upper: float) -> float:
+    """将数值限制在 [lower, upper]，用于避免坐标越界。"""
+    if value < lower:
+        return lower
+    if value > upper:
+        return upper
+    return value
+
+
+def ball_create() -> Ball:
+    """创建单个随机弹球（位置、速度、半径、颜色）。"""
+    radius = random.randint(cfg.R_MIN, cfg.R_MAX)
+    x = random.uniform(radius, cfg.WIDTH - radius)
+    y = random.uniform(radius, cfg.HEIGHT - radius)
     angle = random.uniform(0, 2 * math.pi)
     speed = random.uniform(cfg.SPEED_MIN, cfg.SPEED_MAX)
     vx = math.cos(angle) * speed
     vy = math.sin(angle) * speed
     color = random.choice(cfg.COLOR_CHOICES)
-    return {"x": x, "y": y, "vx": vx, "vy": vy, "r": r, "color": color}
+    return {"x": x, "y": y, "vx": vx, "vy": vy, "r": radius, "color": color}
 
 
-def make_balls(n):
-    """生成 n 个球，存入列表后返回。"""
-    return [make_ball() for _ in range(n)]
+def balls_create_many(count: int) -> Balls:
+    """批量创建弹球列表。"""
+    return [ball_create() for _ in range(count)]
 
 
-def update_balls(balls):
-    """
-    更新每个球的位置，并进行边界反弹。
-    - 碰到左右边界：反转 vx
-    - 碰到上下边界：反转 vy
-    采用镜面反弹，并轻微校正位置避免粘墙。
-    """
-    for b in balls:
-        b["x"] += b["vx"]
-        b["y"] += b["vy"]
+def ball_update(ball: Ball) -> None:
+    """更新单个弹球的位置并做镜面反弹。"""
+    ball["x"] += ball["vx"]
+    ball["y"] += ball["vy"]
 
-        r = b["r"]
-        # 左右边界
-        if b["x"] <= r:
-            b["x"] = r
-            b["vx"] = -b["vx"]
-        elif b["x"] >= cfg.WIDTH - r:
-            b["x"] = cfg.WIDTH - r
-            b["vx"] = -b["vx"]
+    radius = ball["r"]
+    if ball["x"] <= radius:
+        ball["x"] = radius
+        ball["vx"] = -ball["vx"]
+    elif ball["x"] >= cfg.WIDTH - radius:
+        ball["x"] = cfg.WIDTH - radius
+        ball["vx"] = -ball["vx"]
 
-        # 上下边界
-        if b["y"] <= r:
-            b["y"] = r
-            b["vy"] = -b["vy"]
-        elif b["y"] >= cfg.HEIGHT - r:
-            b["y"] = cfg.HEIGHT - r
-            b["vy"] = -b["vy"]
+    if ball["y"] <= radius:
+        ball["y"] = radius
+        ball["vy"] = -ball["vy"]
+    elif ball["y"] >= cfg.HEIGHT - radius:
+        ball["y"] = cfg.HEIGHT - radius
+        ball["vy"] = -ball["vy"]
 
 
-def draw_balls(screen, balls):
-    """把所有的球画到屏幕上。"""
-    for b in balls:
+def balls_update_all(balls: Balls) -> None:
+    """更新所有弹球。"""
+    for ball in balls:
+        ball_update(ball)
+
+
+def balls_draw_all(balls: Balls, screen: pygame.Surface) -> None:
+    """将所有弹球绘制到屏幕上。"""
+    for ball in balls:
         pygame.draw.circle(
             screen,
-            b["color"],
-            (int(b["x"]), int(b["y"])) ,
-            int(b["r"]) ,
+            ball["color"],
+            (int(ball["x"]), int(ball["y"])),
+            int(ball["r"]),
         )
 
 
-def handle_events():
-    """
-    处理窗口事件：关闭窗口或按 ESC 键返回 True。
-    """
-    # Deprecated: event handling is done in main loop
-    return False
+# ============ HUD 相关 ============
+def hud_create(font_name: str = None) -> HUD:
+    """创建 HUD 字典，缓存字体资源并预置默认值。"""
+    return {
+        "font_small": pygame.font.SysFont(font_name, 28),
+        "font_normal": pygame.font.SysFont(font_name, 24),
+        "font_big": pygame.font.SysFont(font_name, 56),
+        "color_text": cfg.WHITE,
+        "padding": 12,
+        "player": None,
+        "state": "ready",
+        "score": 0,
+        "high_score": 0,
+    }
 
 
-def make_player():
-    """
-    生成玩家方块，初始在屏幕中央。
-    使用中心点坐标 (x, y) 存储，绘制时转换为左上角。
-    """
+def hud_refresh(hud: HUD, game: Game) -> None:
+    """将 game 中的实时数据同步到 HUD。"""
+    hud["player"] = game.get("player")
+    hud["state"] = game.get("state", "ready")
+    hud["score"] = int(game.get("score", 0))
+    hud["high_score"] = game.get("high_score", 0)
+
+
+def hud_draw_hp(hud: HUD, screen: pygame.Surface) -> None:
+    font = hud["font_normal"]
+    color = hud["color_text"]
+    pad = hud["padding"]
+    player = hud["player"]
+
+    if player is None:
+        return
+
+    text =  f"HP: {player['hp']}/{player['hp_max']}"
+    text_surf = font.render(text, True, color)
+    screen.blit(text_surf, (pad + 4, pad))
+
+
+    bar_x, bar_y = pad + 4, pad + 28
+    bar_w, bar_h = 220, 16
+    pygame.draw.rect(screen, cfg.RED, (bar_x, bar_y, bar_w, bar_h))
+    if player["hp_max"] > 0 and player["hp"] > 0:
+        ratio = player["hp"] / player["hp_max"]
+        pygame.draw.rect(screen, cfg.GREEN, (bar_x, bar_y, int(bar_w * ratio), bar_h))
+    pygame.draw.rect(screen, cfg.WHITE, (bar_x, bar_y, bar_w, bar_h), 2)
+
+
+def hud_draw_scores(hud: HUD, screen: pygame.Surface) -> None:
+    font = hud["font_normal"]
+    color = hud["color_text"]
+    pad = hud["padding"]
+    score = hud["score"]
+    high_score = hud["high_score"]
+
+    score_surf = font.render(f"Score: {score}", True, color)
+    hs_surf = font.render(f"High: {high_score}", True, color)
+    screen.blit(score_surf, (cfg.WIDTH - score_surf.get_width() - pad, pad))
+    screen.blit(hs_surf, (cfg.WIDTH - hs_surf.get_width() - pad, pad + 24))
+
+
+def hud_draw_state_banner(hud: HUD, screen: pygame.Surface) -> None:
+    big_font = hud["font_big"]
+    small_font = hud["font_small"]
+    color = hud["color_text"]
+    center = (cfg.WIDTH // 2, cfg.HEIGHT // 2)
+
+    banner_map = {
+        "ready": ("READY", "Press SPACE / ENTER to start"),
+        "paused": ("PAUSED", "Press P to resume"),
+        "gameover": ("GAME OVER", "Press SPACE / ENTER to restart"),
+    }
+    msg, tip = banner_map.get(hud["state"], (None, None))
+
+    if msg is None:
+        return
+
+    msg_surf = big_font.render(msg, True, color)
+    msg_rect = msg_surf.get_rect(center=center)
+    screen.blit(msg_surf, msg_rect)
+
+    if tip:
+        tip_surf = small_font.render(tip, True, color)
+        tip_rect = tip_surf.get_rect(center=(center[0], center[1] + 48))
+        screen.blit(tip_surf, tip_rect)
+
+
+def hud_draw_pause_hint(hud: HUD, screen: pygame.Surface) -> None:
+    if hud["state"] != "playing":
+        return
+
+    small_font = hud["font_small"]
+    color = hud["color_text"]
+    pad = hud["padding"]
+    tip = small_font.render("P: Pause", True, color)
+    screen.blit(
+        tip,
+        (cfg.WIDTH - tip.get_width() - pad, cfg.HEIGHT - tip.get_height() - pad),
+    )
+
+
+def hud_draw(hud: HUD, screen: pygame.Surface) -> None:
+    """绘制 HUD 的所有部分。"""
+    hud_draw_hp(hud, screen)
+    hud_draw_scores(hud, screen)
+    hud_draw_state_banner(hud, screen)
+    hud_draw_pause_hint(hud, screen)
+
+
+# ============ 玩家相关 ============
+def player_create() -> Player:
+    """创建玩家，初始居中并带短暂无敌冷却。"""
     return {
         "x": cfg.WIDTH / 2,
         "y": cfg.HEIGHT / 2,
@@ -109,14 +224,12 @@ def make_player():
         "color": cfg.PLAYER_COLOR,
         "hp": cfg.PLAYER_HP_MAX,
         "hp_max": cfg.PLAYER_HP_MAX,
-        "hurt_cd": cfg.HURT_COOLDOWN_FRAMES,  # 短暂无敌计时器（帧）
+        "hurt_cd": cfg.HURT_COOLDOWN_FRAMES,
     }
 
 
-def handle_move_input():
-    """
-    读取键盘（WASD/方向键）输入，返回 (dx, dy)。
-    """
+def player_handle_move_input() -> tuple[int, int]:
+    """读取方向键 / WASD 输入，返回单位方向向量。"""
     keys = pygame.key.get_pressed()
     dx = 0
     dy = 0
@@ -131,38 +244,46 @@ def handle_move_input():
     return dx, dy
 
 
-def update_player(player):
-    """
-    根据输入移动玩家，并限制在屏幕内。
-    """
-    dx, dy = handle_move_input()
-
-    # 斜向移动时做简单归一化，避免更快
+def player_update(player: Player) -> None:
+    """根据输入移动玩家，并处理边界与受伤冷却。"""
+    dx, dy = player_handle_move_input()
     norm = math.sqrt(2) if (dx != 0 and dy != 0) else 1
 
-    effective_speed = player["speed"] * (cfg.INVINCIBLE_SPEED_MULT if player["hurt_cd"] > 0 else 1.0)
-    player["x"] += (effective_speed * dx) / norm
-    player["y"] += (effective_speed * dy) / norm
+    speed = player["speed"]
+    if player["hurt_cd"] > 0:
+        speed *= cfg.INVINCIBLE_SPEED_MULT
+
+    player["x"] += (speed * dx) / norm
+    player["y"] += (speed * dy) / norm
 
     half_w = player["w"] / 2
     half_h = player["h"] / 2
     player["x"] = clamp(player["x"], half_w, cfg.WIDTH - half_w)
     player["y"] = clamp(player["y"], half_h, cfg.HEIGHT - half_h)
 
-    # 受伤冷却帧数递减
     if player["hurt_cd"] > 0:
         player["hurt_cd"] -= 1
 
 
-def circle_rect_collide(ball, player):
-    """
-    圆（球）-矩形（玩家方块）碰撞：
-    - 取圆心到矩形的最近点；
-    - 若距离 <= 半径，则视为碰撞。
-    """
+def player_draw(player: Player, screen: pygame.Surface) -> None:
+    """将玩家方块绘制到屏幕上。"""
+    half_w = player["w"] / 2
+    half_h = player["h"] / 2
+    rect = pygame.Rect(
+        int(player["x"] - half_w),
+        int(player["y"] - half_h),
+        int(player["w"]),
+        int(player["h"]),
+    )
+    color = cfg.PLAYER_INVINCIBLE_COLOR if player["hurt_cd"] > 0 else player["color"]
+    pygame.draw.rect(screen, color, rect)
+
+
+def circle_rect_collide(ball: Ball, player: Player) -> bool:
+    """检测圆形弹球与玩家矩形是否碰撞。"""
     cx = ball["x"]
     cy = ball["y"]
-    r = ball["r"]
+    radius = ball["r"]
 
     half_w = player["w"] / 2
     half_h = player["h"] / 2
@@ -171,225 +292,129 @@ def circle_rect_collide(ball, player):
     right = player["x"] + half_w
     bottom = player["y"] + half_h
 
-    # 找到离圆心最近的点（夹在矩形范围内）
     nearest_x = clamp(cx, left, right)
     nearest_y = clamp(cy, top, bottom)
-
     dx = cx - nearest_x
     dy = cy - nearest_y
-    return (dx * dx + dy * dy) <= (r * r)
+    return (dx * dx + dy * dy) <= (radius * radius)
 
 
-def damage_player_if_hit(player, balls):
-    """
-    检测是否与任意弹球碰撞。
-    - 命中且不在冷却中：扣血并进入短暂无敌。
-    返回是否造成伤害（便于扩展音效等）。
-    """
+def player_take_damage_if_hit(player: Player, balls: Balls) -> bool:
+    """若玩家未处于冷却，则检测碰撞并扣血。返回是否受伤。"""
     if player["hurt_cd"] > 0 or player["hp"] <= 0:
         return False
 
-    for b in balls:
-        if circle_rect_collide(b, player):
+    for ball in balls:
+        if circle_rect_collide(ball, player):
             player["hp"] = max(0, player["hp"] - cfg.DAMAGE_PER_HIT)
             player["hurt_cd"] = cfg.HURT_COOLDOWN_FRAMES
             return True
     return False
 
 
-def draw_player(screen, player):
-    """绘制玩家方块。"""
-    half_w = player["w"] / 2
-    half_h = player["h"] / 2
-    rect = pygame.Rect(int(player["x"] - half_w), int(player["y"] - half_h), int(player["w"]), int(player["h"]))
-    color = cfg.PLAYER_INVINCIBLE_COLOR if player["hurt_cd"] > 0 else player["color"]
-    pygame.draw.rect(screen, color, rect)
+# ============ 游戏核心 ============
+def game_create() -> Game:
+    """创建游戏对象，集中存放所有运行时数据。"""
+    return {
+        "state": "ready",
+        "score": 0.0,
+        "high_score": 0,
+        "balls": [],
+        "player": None,
+        "hud": hud_create(),
+    }
 
 
-def draw_hud(screen, font, player, state, score, high_score):
-    """
-    左上角：HP；右上角：Score/High；中央：状态提示。
-    """
-    # HP 文本
-    if player is not None:
-        text = f"HP: {player['hp']}/{player['hp_max']}"
-    else:
-        text = "HP: -/-"
-    text_surf = font.render(text, True, cfg.WHITE)
-    screen.blit(text_surf, (16, 12))
-
-    # 血条
-    if player is not None:
-        bar_x, bar_y = 16, 40
-        bar_w, bar_h = 220, 16
-        pygame.draw.rect(screen, cfg.RED, (bar_x, bar_y, bar_w, bar_h))
-        if player["hp_max"] > 0 and player["hp"] > 0:
-            ratio = player["hp"] / player["hp_max"]
-            pygame.draw.rect(screen, cfg.GREEN, (bar_x, bar_y, int(bar_w * ratio), bar_h))
-        pygame.draw.rect(screen, cfg.WHITE, (bar_x, bar_y, bar_w, bar_h), 2)
-
-    # 分数（右上角）
-    score_text = f"Score: {int(score)}"
-    hs_text = f"High: {high_score}"
-    score_surf = font.render(score_text, True, cfg.WHITE)
-    hs_surf = font.render(hs_text, True, cfg.WHITE)
-    screen.blit(score_surf, (cfg.WIDTH - score_surf.get_width() - 16, 12))
-    screen.blit(hs_surf, (cfg.WIDTH - hs_surf.get_width() - 16, 36))
-
-    # 状态提示
-    big_font = pygame.font.SysFont(None, 56)
-    small_font = pygame.font.SysFont(None, 28)
-    center = (cfg.WIDTH // 2, cfg.HEIGHT // 2)
-
-    if state == "ready":
-        msg, tip = "READY", "Press SPACE / ENTER to start"
-    elif state == "paused":
-        msg, tip = "PAUSED", "Press P to resume"
-    elif state == "gameover":
-        msg, tip = "GAME OVER", "Press SPACE / ENTER to restart"
-    else:
-        msg, tip = None, None
-
-    if msg:
-        msg_surf = big_font.render(msg, True, cfg.WHITE)
-        rect = msg_surf.get_rect(center=center)
-        screen.blit(msg_surf, rect)
-        if tip:
-            tip_surf = small_font.render(tip, True, cfg.WHITE)
-            tip_rect = tip_surf.get_rect(center=(center[0], center[1] + 48))
-            screen.blit(tip_surf, tip_rect)
-
-    if state == "playing":
-        tip2 = small_font.render("P: Pause", True, cfg.WHITE)
-        screen.blit(tip2, (cfg.WIDTH - tip2.get_width() - 16, cfg.HEIGHT - tip2.get_height() - 12))
+def game_start(game: Game) -> None:
+    """开始一次新回合，重置弹球与玩家，同时归零得分。"""
+    ball_count = random.randint(cfg.BALL_MIN, cfg.BALL_MAX)
+    game["balls"] = balls_create_many(ball_count)
+    game["player"] = player_create()
+    game["score"] = 0.0
+    game["state"] = "playing"
 
 
-def draw_hud(screen, font, big_font, small_font, player, state, score, high_score):
-    """
-    HUD: left-top HP and bar, right-top score/high,
-    center status messages using provided cached fonts.
-    """
-    # HP text (left-top)
-    if player is not None:
-        text = f"HP: {player['hp']}/{player['hp_max']}"
-    else:
-        text = "HP: -/-"
-    text_surf = font.render(text, True, cfg.WHITE)
-    screen.blit(text_surf, (16, 12))
-
-    # HP bar
-    if player is not None:
-        bar_x, bar_y = 16, 40
-        bar_w, bar_h = 220, 16
-        pygame.draw.rect(screen, cfg.RED, (bar_x, bar_y, bar_w, bar_h))
-        if player["hp_max"] > 0 and player["hp"] > 0:
-            ratio = player["hp"] / player["hp_max"]
-            pygame.draw.rect(screen, cfg.GREEN, (bar_x, bar_y, int(bar_w * ratio), bar_h))
-        pygame.draw.rect(screen, cfg.WHITE, (bar_x, bar_y, bar_w, bar_h), 2)
-
-    # Score/High (right-top)
-    score_text = f"Score: {int(score)}"
-    hs_text = f"High: {high_score}"
-    score_surf = font.render(score_text, True, cfg.WHITE)
-    hs_surf = font.render(hs_text, True, cfg.WHITE)
-    screen.blit(score_surf, (cfg.WIDTH - score_surf.get_width() - 16, 12))
-    screen.blit(hs_surf, (cfg.WIDTH - hs_surf.get_width() - 16, 36))
-
-    # Center status message
-    center = (cfg.WIDTH // 2, cfg.HEIGHT // 2)
-    if state == "ready":
-        msg, tip = "READY", "Press SPACE / ENTER to start"
-    elif state == "paused":
-        msg, tip = "PAUSED", "Press P to resume"
-    elif state == "gameover":
-        msg, tip = "GAME OVER", "Press SPACE / ENTER to restart"
-    else:
-        msg, tip = None, None
-
-    if msg:
-        msg_surf = big_font.render(msg, True, cfg.WHITE)
-        rect = msg_surf.get_rect(center=center)
-        screen.blit(msg_surf, rect)
-        if tip:
-            tip_surf = small_font.render(tip, True, cfg.WHITE)
-            tip_rect = tip_surf.get_rect(center=(center[0], center[1] + 48))
-            screen.blit(tip_surf, tip_rect)
-
-    if state == "playing":
-        tip2 = small_font.render("P: Pause", True, cfg.WHITE)
-        screen.blit(tip2, (cfg.WIDTH - tip2.get_width() - 16, cfg.HEIGHT - tip2.get_height() - 12))
+def game_handle_keydown(game: Game, key: int) -> None:
+    """处理会影响状态的按键。"""
+    if game["state"] in ("ready", "gameover") and key in (pygame.K_SPACE, pygame.K_RETURN):
+        game_start(game)
+        return
+    if game["state"] == "playing" and key == pygame.K_p:
+        game["state"] = "paused"
+        return
+    if game["state"] == "paused" and key == pygame.K_p:
+        game["state"] = "playing"
 
 
-def main():
-    # 初始化 pygame 与窗口
+def game_handle_event(game: Game, event: pygame.event.Event) -> bool:
+    """处理单个事件。返回 False 表示需要退出游戏循环。"""
+    if event.type == pygame.QUIT:
+        return False
+    if event.type == pygame.KEYDOWN:
+        if event.key == pygame.K_ESCAPE:
+            return False
+        game_handle_keydown(game, event.key)
+    return True
+
+
+def game_update(game: Game, dt: float) -> None:
+    """根据当前状态推进一帧游戏逻辑。"""
+    if game["state"] != "playing":
+        return
+
+    balls_update_all(game["balls"])
+    if game["player"] is not None:
+        player_update(game["player"])
+        _ = player_take_damage_if_hit(game["player"], game["balls"])
+
+    game["score"] += dt * cfg.BASE_SCORE_PER_SEC
+    if game["player"] is not None and game["player"]["hp"] <= 0:
+        game["state"] = "gameover"
+        game["high_score"] = max(game["high_score"], int(game["score"]))
+
+
+def game_draw_entities(game: Game, screen: pygame.Surface) -> None:
+    """根据状态绘制弹球与玩家。"""
+    if game["state"] not in ("playing", "paused", "gameover"):
+        return
+
+    if game["balls"]:
+        balls_draw_all(game["balls"], screen)
+    if game["player"] is not None:
+        player_draw(game["player"], screen)
+
+
+def game_render(game: Game, screen: pygame.Surface) -> None:
+    """完成当前帧的所有绘制工作。"""
+    screen.fill(cfg.BG_COLOR)
+    game_draw_entities(game, screen)
+    hud_refresh(game["hud"], game)
+    hud_draw(game["hud"], screen)
+
+
+def main() -> None:
     pygame.init()
     pygame.display.set_caption("躲避球 M3：状态/分数/暂停（ESC 退出）")
     screen = pygame.display.set_mode((cfg.WIDTH, cfg.HEIGHT))
     clock = pygame.time.Clock()
-    font = pygame.font.SysFont(None, 24)
-    big_font = pygame.font.SysFont(None, 56)
-    small_font = pygame.font.SysFont(None, 28)
 
-    def start_new_game():
-        ball_count = random.randint(cfg.BALL_MIN, cfg.BALL_MAX)
-        return make_balls(ball_count), make_player(), 0.0
-
-    state = "ready"  # ready/playing/paused/gameover
-    balls = []
-    player = None
-    score = 0.0
-    high_score = 0
+    game = game_create()
 
     running = True
     while running:
         dt = clock.tick(cfg.FPS) / 1000.0
 
-        # 1) 处理输入 / 退出
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+            if not game_handle_event(game, event):
                 running = False
                 break
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                running = False
-                break
-            if event.type == pygame.KEYDOWN:
-                if state == "ready":
-                    if event.key in (pygame.K_SPACE, pygame.K_RETURN):
-                        balls, player, score = start_new_game()
-                        state = "playing"
-                elif state == "playing":
-                    if event.key == pygame.K_p:
-                        state = "paused"
-                elif state == "paused":
-                    if event.key == pygame.K_p:
-                        state = "playing"
-                elif state == "gameover":
-                    if event.key in (pygame.K_SPACE, pygame.K_RETURN):
-                        balls, player, score = start_new_game()
-                        state = "playing"
 
         if not running:
             break
 
-        # 2) 更新（仅 playing）
-        if state == "playing":
-            update_balls(balls)
-            update_player(player)
-            _ = damage_player_if_hit(player, balls)
-            score += dt * cfg.BASE_SCORE_PER_SEC
-            if player["hp"] <= 0:
-                state = "gameover"
-                high_score = max(high_score, int(score))
+        game_update(game, dt)
+        game_render(game, screen)
 
-        # 3) 渲染
-        screen.fill(cfg.BG_COLOR)
-        if state in ("playing", "paused", "gameover"):
-            draw_balls(screen, balls)
-            if player is not None:
-                draw_player(screen, player)
-        draw_hud(screen, font, big_font, small_font, player, state, score, high_score)
-
-        # 4) 显示
         pygame.display.flip()
 
     pygame.quit()
