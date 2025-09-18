@@ -237,7 +237,7 @@ def hud_draw_state_banner(hud: HUD, screen: pygame.Surface) -> None:
     center = (cfg.WIDTH // 2, cfg.HEIGHT // 2)
 
     banner_map = {
-        "ready": ("READY", "Press SPACE / ENTER to start"),
+        "ready": ("READY", "Press SPACE / ENTER to start BANCING BALL"),
         "paused": ("PAUSED", "Press P to resume"),
         "gameover": ("GAME OVER", "Press SPACE / ENTER to restart"),
     }
