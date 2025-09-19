@@ -4,9 +4,13 @@
 
 ## 核心数据关系
 ```
-Game --> Player <--> Ball
+Game ---> Player 
   |
-  +----> HUD --> Level
+  + ---*> Ball
+  |
+  +-----> HUD 
+  |
+  +-----> Level
 ```
 
 
@@ -44,13 +48,13 @@ Game --> Player <--> Ball
 ## 状态切换
 
 ```
-READY  --Space/Enter-->  PLAYING  --P-->  PAUSED
-  ^                         |  ^              |
-  |                         |  |              |
-  +------Space/Enter--------+  +------P-------+
-                             |
-                           HP <= 0
-                             v
+READY ---Space/Enter-->  PLAYING  --P-->  PAUSED
+                         ^   |  ^              |
+                         |   |  |              |
+               Space/Enter   |  +------P-------+
+                         |   |
+                         |   HP <= 0
+                         |   v
                          GAMEOVER
 ```
 
