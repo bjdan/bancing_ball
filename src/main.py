@@ -17,8 +17,8 @@ HUD = dict[str, Any]
 Game = dict[str, Any]
 Level = dict[str, Any]
 
-BACKGROUND: pygame.Surface | None = None
-SOUNDS: dict[str, pygame.mixer.Sound] = {}
+background: pygame.Surface | None = None
+sounds: dict[str, pygame.mixer.Sound] = {}
 
 
 # ============ 资源加载 ============
@@ -26,22 +26,22 @@ SOUNDS: dict[str, pygame.mixer.Sound] = {}
 
 def load_graphics() -> None:
     """加载背景图片，失败时保持为 None。"""
-    global BACKGROUND
-    BACKGROUND = None
+    global background
+    background = None
     path = cfg.IMAGE_BACKGROUND
     if not path.is_file():
         return
     try:
         image = pygame.image.load(str(path)).convert()
-        BACKGROUND = pygame.transform.smoothscale(image, (cfg.WIDTH, cfg.HEIGHT))
+        background = pygame.transform.smoothscale(image, (cfg.WIDTH, cfg.HEIGHT))
     except pygame.error:
-        BACKGROUND = None
+        background = None
 
 
 def load_audio() -> None:
     """初始化混音器并加载音效资源。"""
-    global SOUNDS
-    SOUNDS = {}
+    global sounds
+    sounds = {}
 
     try:
         pygame.mixer.init()
@@ -56,12 +56,12 @@ def load_audio() -> None:
             sound.set_volume(cfg.SFX_VOLUME)
         except pygame.error:
             continue
-        SOUNDS[name] = sound
+        sounds[name] = sound
 
 
 def play_sound(game: Game, name: str) -> None:
     """在未静音时播放指定事件的音效。"""
-    sound = SOUNDS.get(name)
+    sound = sounds.get(name)
     if not sound or game.get("audio_muted", False):
         return
     sound.play()
@@ -483,7 +483,7 @@ def game_update(game: Game, dt: float) -> None:
     game["score"] += dt * score_rate
     game["high_score"] = max(game["high_score"], int(game["score"]))
 
-    if player is not None and player["hp"] <= 0 and game["state"] != "gameover":
+    if player is not None and player["hp"] <= 0:
         game["state"] = "gameover"
         play_sound(game, "gameover")
 
@@ -503,8 +503,8 @@ def game_draw_entities(game: Game, screen: pygame.Surface) -> None:
 
 def render_background(screen: pygame.Surface) -> None:
     """绘制背景图或备用底色。"""
-    if BACKGROUND:
-        screen.blit(BACKGROUND, (0, 0))
+    if background:
+        screen.blit(background, (0, 0))
     else:
         screen.fill(cfg.BG_COLOR)
 
